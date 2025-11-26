@@ -59,6 +59,7 @@ const proccessLessonTimetable = (timetable) => {
     value.forEach((events) => {
       events.forEach((event) => {
         if (blacklist.includes(event.Subject.Name)) return;
+        if (event.IsCancelled) return;
 
         const subject = event.Subject.Name;
         const start = [
