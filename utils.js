@@ -6,17 +6,16 @@ const blacklist = [
 ];
 
 const getLessons = async (librusApi) => {
-  const getFirstMondayAfterPrevSep1 = () => {
+  const getStartingMonday = () => {
     const now = new Date();
-    let year = now.getFullYear();
-    const sep1ThisYear = new Date(year, 8, 1);
-    if (now < sep1ThisYear) year -= 1;
-    const sep1 = new Date(year, 8, 1);
+    // Start 2 weeks ago to have some history but keep it fast
+    const start = new Date(now);
+    start.setDate(now.getDate() - 14);
 
-    const diff = (1 - sep1.getDay() + 7) % 7;
-    const monday = new Date(sep1);
-    monday.setDate(sep1.getDate() + diff);
-    return monday;
+    // Adjust to Monday
+    const day = start.getDay();
+    const diff = start.getDate() - day + (day === 0 ? -6 : 1);
+    return new Date(start.setDate(diff));
   };
 
   const formatWeekStartQuery = (date) => {
@@ -27,13 +26,18 @@ const getLessons = async (librusApi) => {
   };
 
   const now = new Date();
-  const currentMonth = now.getMonth();
-
-  let nextDate = getFirstMondayAfterPrevSep1();
+  let nextDate = getStartingMonday();
   let lessons = [];
+
+  // Fetch a window of 8 weeks (2 back, 6 forward) to avoid 504 timeouts
+  let weeksFetched = 0;
+  const MAX_WEEKS = 8;
 
   do {
     try {
+      console.log(
+        `Fetching lessons for week starting: ${formatWeekStartQuery(nextDate)}`,
+      );
       const weekData = await librusApi.getTimetablesDate(
         formatWeekStartQuery(nextDate),
       );
@@ -54,7 +58,8 @@ const getLessons = async (librusApi) => {
       console.error("Error fetching week data:", err);
       nextDate = null;
     }
-  } while (nextDate && (nextDate.getMonth() >= 8 || nextDate.getMonth() < 6));
+    weeksFetched++;
+  } while (nextDate && weeksFetched < MAX_WEEKS);
 
   return lessons;
 };
@@ -78,7 +83,6 @@ const proccessLessonTimetable = (timetable) => {
           ...date,
           ...event.HourTo.split(":").map((x) => parseInt(x)),
         ];
-
         entries.push({
           uid: `${key}-${event.HourFrom}@lessons.librus`,
           description: `${event.Teacher.FirstName} ${event.Teacher.LastName}`,
@@ -89,6 +93,7 @@ const proccessLessonTimetable = (timetable) => {
       });
     });
   });
+
   return entries;
 };
 
@@ -104,10 +109,10 @@ const getEvents = async (librusApi) => {
   rawSubjects.Subjects.forEach((subject) => {
     subjects[subject.Id] = subject;
   });
+
   const homeworksData = await librusApi.getHomeWorks();
   const homeworks = homeworksData.HomeWorks || [];
   const events = [];
-
   homeworks.forEach((homework) => {
     const date = homework.Date.split("-").map((x) => parseInt(x));
     const start = [
@@ -118,6 +123,7 @@ const getEvents = async (librusApi) => {
       ...date,
       ...homework.TimeTo.split(":").map((x) => parseInt(x)),
     ];
+
     events.push({
       uid: homework.Id.toString() + "@events.librus",
       title:
