@@ -307,6 +307,10 @@ function setupSchedulers() {
 
 // API Endpoints
 app.get(["/calendar", "/events"], async (req, res) => {
+  // Set proper headers for iCalendar
+  res.setHeader("Content-Type", "text/calendar; charset=utf-8");
+  res.setHeader("Content-Disposition", "inline; filename=calendar.ics");
+
   const now = Date.now();
   const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 
@@ -339,6 +343,10 @@ app.get(["/calendar", "/events"], async (req, res) => {
 });
 
 app.get("/lessons", async (req, res) => {
+  // Set proper headers for iCalendar
+  res.setHeader("Content-Type", "text/calendar; charset=utf-8");
+  res.setHeader("Content-Disposition", "inline; filename=lessons.ics");
+
   // Always serve from cache if available
   if (cache.lessons.data) {
     return res.send(cache.lessons.data);
