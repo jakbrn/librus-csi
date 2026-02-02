@@ -122,6 +122,68 @@ function isPreviousWeek(weekStart) {
   return weekStart < currentWeekStart;
 }
 
+// Get school year start date (September 1st)
+function getSchoolYearStart() {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth(); // 0-based: 0=Jan, 8=Sep
+
+  // If we're before September, the school year started last year
+  const schoolYearStartYear = currentMonth < 8 ? currentYear - 1 : currentYear;
+
+  const startDate = new Date(schoolYearStartYear, 8, 1); // September 1st
+  return getMonday(startDate); // Get the Monday of that week
+}
+
+// Get school year end date (June 30th)
+function getSchoolYearEnd() {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+
+  // If we're in September or later, school year ends next year
+  const schoolYearEndYear = currentMonth >= 8 ? currentYear + 1 : currentYear;
+
+  const endDate = new Date(schoolYearEndYear, 5, 30); // June 30th
+  return getMonday(endDate); // Get the Monday of that week
+}
+
+// Get all week starts from September 1 to June 30
+function getAllSchoolWeeks() {
+  const weeks = [];
+  const start = getSchoolYearStart();
+  const end = getSchoolYearEnd();
+
+  let current = new Date(start);
+  while (current <= end) {
+    weeks.push(new Date(current));
+    current.setDate(current.getDate() + 7); // Move to next week
+  }
+
+  return weeks;
+}
+
+// Categorize weeks: current/next 2 vs all others
+function categorizeWeeks() {
+  const allWeeks = getAllSchoolWeeks();
+  const currentWeekStart = getWeekStart(0);
+  const twoWeeksLater = new Date(currentWeekStart);
+  twoWeeksLater.setDate(twoWeeksLater.getDate() + 14); // 2 weeks ahead
+
+  const currentAndNext = [];
+  const others = [];
+
+  allWeeks.forEach((week) => {
+    if (week >= currentWeekStart && week <= twoWeeksLater) {
+      currentAndNext.push(week);
+    } else {
+      others.push(week);
+    }
+  });
+
+  return { currentAndNext, others };
+}
+
 // Fetch lessons for a specific week
 async function fetchWeekLessons(weekStart) {
   const weekKey = getWeekKey(weekStart);
@@ -170,38 +232,49 @@ function compileLessonsCache() {
 
 // Background refresh scheduler
 async function refreshCurrentAndNextWeeks() {
-  console.log("[Refresh] Current and next 2 weeks...");
+  const { currentAndNext } = categorizeWeeks();
+  console.log(
+    `[Refresh] Current and next weeks (${currentAndNext.length} weeks)...`,
+  );
 
-  for (let i = 0; i <= 2; i++) {
-    await fetchWeekLessons(getWeekStart(i));
+  for (const week of currentAndNext) {
+    await fetchWeekLessons(week);
   }
 
   compileLessonsCache();
   console.log("[Refresh] Current/next weeks complete");
 }
 
-async function refreshPreviousWeeks() {
-  console.log("[Refresh] Previous weeks...");
+async function refreshOtherWeeks() {
+  const { others } = categorizeWeeks();
+  console.log(`[Refresh] Other weeks (${others.length} weeks)...`);
 
-  // Fetch 4 weeks back
-  for (let i = -4; i < 0; i++) {
-    await fetchWeekLessons(getWeekStart(i));
+  for (const week of others) {
+    await fetchWeekLessons(week);
   }
 
   compileLessonsCache();
-  console.log("[Refresh] Previous weeks complete");
+  console.log("[Refresh] Other weeks complete");
 }
 
 // Initial data fetch
 async function initialFetch() {
+  const allWeeks = getAllSchoolWeeks();
+  const schoolYearStart = getSchoolYearStart();
+  const schoolYearEnd = getSchoolYearEnd();
+
   console.log("[Initial] Starting initial data fetch...");
+  console.log(
+    `[Initial] School year: ${schoolYearStart.toISOString().split("T")[0]} to ${schoolYearEnd.toISOString().split("T")[0]}`,
+  );
+  console.log(`[Initial] Total weeks to fetch: ${allWeeks.length}`);
 
-  // Fetch previous weeks
-  await refreshPreviousWeeks();
+  // Fetch all weeks from September to June
+  for (const week of allWeeks) {
+    await fetchWeekLessons(week);
+  }
 
-  // Fetch current and next weeks
-  await refreshCurrentAndNextWeeks();
-
+  compileLessonsCache();
   console.log("[Initial] Initial fetch complete");
 }
 
@@ -217,19 +290,19 @@ function setupSchedulers() {
     30 * 60 * 1000,
   );
 
-  // Previous weeks: twice a day (every 12 hours)
+  // All other weeks (previous and future beyond 2 weeks): twice a day (every 12 hours)
   setInterval(
     () => {
-      refreshPreviousWeeks().catch((err) => {
-        console.error("Error in previous weeks refresh:", err);
+      refreshOtherWeeks().catch((err) => {
+        console.error("Error in other weeks refresh:", err);
       });
     },
     12 * 60 * 60 * 1000,
   );
 
   console.log("✓ Schedulers configured");
-  console.log("  - Current/next weeks: every 30 minutes");
-  console.log("  - Previous weeks: every 12 hours");
+  console.log("  - Current + next 2 weeks: every 30 minutes");
+  console.log("  - All other weeks: every 12 hours");
 }
 
 // API Endpoints
