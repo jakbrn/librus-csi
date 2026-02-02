@@ -5,6 +5,32 @@ const blacklist = [
   "Programowanie obiektowe i algorytmika",
 ];
 
+// Fetch lessons for a specific week
+const getLessonsForWeek = async (librusApi, weekStart) => {
+  const formatWeekStartQuery = (date) => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    return `weekStart=${y}-${m}-${d}`;
+  };
+
+  try {
+    const weekData = await librusApi.getTimetablesDate(
+      formatWeekStartQuery(weekStart),
+    );
+
+    if (weekData && weekData.Timetable) {
+      return proccessLessonTimetable(weekData.Timetable);
+    }
+
+    return [];
+  } catch (err) {
+    console.error("Error fetching week data:", err);
+    return [];
+  }
+};
+
+// Legacy function - kept for backward compatibility
 const getLessons = async (librusApi) => {
   const getStartingMonday = () => {
     const now = new Date();
@@ -140,5 +166,7 @@ const getEvents = async (librusApi) => {
 
 module.exports = {
   getLessons,
+  getLessonsForWeek,
   getEvents,
+  processLessonTimetable: proccessLessonTimetable,
 };
