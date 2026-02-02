@@ -25,6 +25,10 @@ const getLessonsForWeek = async (librusApi, weekStart) => {
 
     return [];
   } catch (err) {
+    // Re-throw auth errors so they can be handled upstream
+    if (err.status === 401 || (err.response && err.response.status === 401)) {
+      throw err;
+    }
     console.error("Error fetching week data:", err);
     return [];
   }

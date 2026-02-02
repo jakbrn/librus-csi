@@ -70,9 +70,9 @@ class RequestQueue {
 
 const requestQueue = new RequestQueue(500); // 500ms between requests
 
-async function ensureToken() {
+async function ensureToken(forceRefresh = false) {
   const now = Date.now();
-  if (activeToken && now < tokenExpiry) {
+  if (!forceRefresh && activeToken && now < tokenExpiry) {
     return true;
   }
 
@@ -91,6 +91,12 @@ async function ensureToken() {
     console.error("Token creation failed:", error);
   }
   return false;
+}
+
+function invalidateToken() {
+  console.log("Invalidating token due to auth error");
+  activeToken = null;
+  tokenExpiry = 0;
 }
 
 // Helper functions for week calculations
@@ -185,8 +191,9 @@ function categorizeWeeks() {
 }
 
 // Fetch lessons for a specific week
-async function fetchWeekLessons(weekStart) {
+async function fetchWeekLessons(weekStart, retryCount = 0) {
   const weekKey = getWeekKey(weekStart);
+  const MAX_RETRIES = 1;
 
   try {
     console.log(`Fetching lessons for week: ${weekKey}`);
@@ -197,6 +204,7 @@ async function fetchWeekLessons(weekStart) {
       return await getLessonsForWeek(librusApi, weekStart);
     });
 
+    // Only cache if we got actual data or empty array (not error)
     cache.lessonsByWeek[weekKey] = {
       data: lessons,
       timestamp: Date.now(),
@@ -205,8 +213,22 @@ async function fetchWeekLessons(weekStart) {
     console.log(`✓ Cached ${lessons.length} lessons for week ${weekKey}`);
     return lessons;
   } catch (err) {
+    // Check if it's a 401 auth error
+    if (err.status === 401 || (err.response && err.response.status === 401)) {
+      console.error(`Auth error for week ${weekKey}, invalidating token`);
+      invalidateToken();
+
+      // Retry once with a fresh token
+      if (retryCount < MAX_RETRIES) {
+        console.log(`Retrying week ${weekKey} with fresh token...`);
+        await new Promise((r) => setTimeout(r, 1000)); // Wait 1 second
+        return await fetchWeekLessons(weekStart, retryCount + 1);
+      }
+    }
+
     console.error(`Error fetching week ${weekKey}:`, err);
-    return [];
+    // Don't cache errors - keep previous cache if it exists
+    return cache.lessonsByWeek[weekKey]?.data || [];
   }
 }
 
