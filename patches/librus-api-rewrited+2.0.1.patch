@@ -1,0 +1,100 @@
+diff --git a/node_modules/librus-api-rewrited/API/Auth/Auth.js b/node_modules/librus-api-rewrited/API/Auth/Auth.js
+index ca9e4f0..67ee7a0 100644
+--- a/node_modules/librus-api-rewrited/API/Auth/Auth.js
++++ b/node_modules/librus-api-rewrited/API/Auth/Auth.js
+@@ -4,42 +4,53 @@ class AuthAPI {
+   }
+ 
+   async activateApiAccess() {
+-    const headers = this.session.headers
+-    try {
+-      const tokenInfoResponse = await this.session.client.get(`${this.session.api.url}/Auth/TokenInfo`, { timeout: 5000, headers });
+-      const identifier = tokenInfoResponse.data.UserIdentifier;
+-      const userInfoResponse = await this.session.client.get(`${this.session.api.url}/Auth/UserInfo/${identifier}`, { timeout: 5000 });
+-      return userInfoResponse.status === 200;
+-    } catch (error) {
+-      console.error(error);
+-      return { code: 0, text: null };
+-    }
++    // OAuth token from refreshToken handles auth - nothing to do here
++    return true;
+   }
+ 
+   async mkToken(login, pass) {
+     try {
+-      const authUrl = 'https://api.librus.pl/OAuth/Authorization?client_id=46&response_type=code&scope=mydata';
+-      const final_authUrl = 'https://api.librus.pl/OAuth/Authorization?client_id=46';
+-      const grandUrl = 'https://api.librus.pl/OAuth/Authorization/Grant?client_id=46';
+-      await this.session.client.get(authUrl);
++      // Step 1: Visit portalRodzina to initialize the session (required before login)
++      await this.session.client.get('https://synergia.librus.pl/loguj/portalRodzina?v=1774820765');
++
++      // Step 2: POST login credentials
+       const formData = new URLSearchParams();
+       formData.append('action', 'login');
+       formData.append('login', login);
+       formData.append('pass', pass);
+-      const getAuthorization = await this.session.client.post(final_authUrl, formData);
+-      if (getAuthorization.status == 200) {
+-        const grantResponse = await this.session.client.get(grandUrl);
+-        let res = false;
+-        if (grantResponse.status === 200) {
+-          res = await this.activateApiAccess();
+-        }
+-        return res;
+-      } else {
++      const getAuthorization = await this.session.client.post(
++        'https://api.librus.pl/OAuth/Authorization?client_id=46',
++        formData,
++        { maxRedirects: 0 }
++      );
++
++      if (getAuthorization.status !== 200) {
+         return false;
+       }
+ 
++      // Step 3: Follow the 2FA redirect chain (2FA -> PerformLogin -> Grant -> portalRodzina)
++      await this.session.client.get('https://api.librus.pl/OAuth/Authorization/2FA?client_id=46');
++
++      // Step 4: Call refreshToken to get the oauth_token Bearer token
++      await this.session.client.get('https://synergia.librus.pl/refreshToken');
++
++      // Step 5: Extract oauth_token from cookie jar and set as Authorization header
++      const jar = this.session.client.defaults.jar;
++      if (jar) {
++        const cookies = jar.getCookiesSync('https://synergia.librus.pl');
++        const oauthCookie = cookies.find(c => c.key === 'oauth_token');
++        if (oauthCookie) {
++          const token = decodeURIComponent(oauthCookie.value);
++          this.session.headers.Authorization = 'Bearer ' + token;
++          return true;
++        }
++      }
++
++      console.error('[Auth] oauth_token not found after refreshToken');
++      return false;
+     } catch (error) {
+-      return error.response
++      console.error('[Auth] mkToken error:', error.message);
++      return false;
+     }
+   }
+ }
+diff --git a/node_modules/librus-api-rewrited/api.js b/node_modules/librus-api-rewrited/api.js
+index 2d32209..9f39d95 100644
+--- a/node_modules/librus-api-rewrited/api.js
++++ b/node_modules/librus-api-rewrited/api.js
+@@ -2,7 +2,12 @@ const axios = require('axios');
+ const cookieSupport = require('axios-cookiejar-support');
+ const { CookieJar } = require('tough-cookie');
+ const jar = new CookieJar();
+-const client = cookieSupport.wrapper(axios.create({ jar }));
++const client = cookieSupport.wrapper(axios.create({
++  jar,
++  headers: {
++    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0'
++  }
++}));
+ 
+ const AuthAPI = require("./API/Auth/Auth");
+ // Grades

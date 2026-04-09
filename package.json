@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "postinstall": "patch-package"
   },
   "author": "",
   "license": "ISC",
@@ -13,5 +14,8 @@
     "express": "^4.21.1",
     "ics": "^3.8.1",
     "librus-api-rewrited": "^2.0.1"
+  },
+  "devDependencies": {
+    "patch-package": "^8.0.1"
   }
 }

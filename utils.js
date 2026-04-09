@@ -101,8 +101,8 @@ const proccessLessonTimetable = (timetable) => {
     const date = key.split("-").map((x) => parseInt(x));
     value.forEach((events) => {
       events.forEach((event) => {
+        if (event.IsCanceled) return;
         if (blacklist.includes(event.Subject.Name)) return;
-        if (event.IsCancelled) return;
 
         const subject = event.Subject.Name;
         const start = [
