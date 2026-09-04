@@ -327,6 +327,32 @@ function setupSchedulers() {
   console.log("  - All other weeks: every 12 hours");
 }
 
+// Fetch events, retrying once with a fresh token on a 401
+async function fetchEventsWithRetry(retryCount = 0) {
+  const MAX_RETRIES = 1;
+
+  try {
+    return await requestQueue.add(async () => {
+      if (!(await ensureToken())) {
+        throw new Error("Authentication failed");
+      }
+      return await getEvents(librusApi);
+    });
+  } catch (err) {
+    if (err.status === 401 || (err.response && err.response.status === 401)) {
+      console.error("Auth error fetching events, invalidating token");
+      invalidateToken();
+
+      if (retryCount < MAX_RETRIES) {
+        console.log("Retrying events fetch with fresh token...");
+        await new Promise((r) => setTimeout(r, 1000));
+        return await fetchEventsWithRetry(retryCount + 1);
+      }
+    }
+    throw err;
+  }
+}
+
 // API Endpoints
 app.get(["/calendar", "/events"], async (req, res) => {
   // Set proper headers for iCalendar
@@ -341,17 +367,14 @@ app.get(["/calendar", "/events"], async (req, res) => {
   }
 
   try {
-    const entries = await requestQueue.add(async () => {
-      if (!(await ensureToken())) {
-        throw new Error("Authentication failed");
-      }
-      return await getEvents(librusApi);
-    });
+    const entries = await fetchEventsWithRetry();
 
     const { error, value } = ics.createEvents(entries);
 
     if (error) {
       console.error("ICS Error:", error);
+      // Serve stale cache rather than an invalid calendar body, if we have one
+      if (cache.events.data) return res.send(cache.events.data);
       return res.status(500).send("Error creating calendar");
     }
 
@@ -360,6 +383,8 @@ app.get(["/calendar", "/events"], async (req, res) => {
     res.send(value);
   } catch (err) {
     console.error("Fetch error:", err);
+    // Serve stale cache rather than an error body, if we have one
+    if (cache.events.data) return res.send(cache.events.data);
     res.status(500).send("Failed to fetch events");
   }
 });
